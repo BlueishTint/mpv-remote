@@ -22,7 +22,7 @@ jobs:
           - { name: macos-aarch64, os: macos-latest, target: aarch64-apple-darwin, exe: mpv-remote-server }
           - { name: macos-x86_64, os: macos-latest, target: x86_64-apple-darwin, exe: mpv-remote-server }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -51,7 +51,7 @@ jobs:
             (cd stage && zip -qr "../dist/$asset" .)
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: dist/*.zip
@@ -61,7 +61,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
