@@ -42,6 +42,10 @@
     </div>
     <button id="mark" class="wide">⚑ Mark this moment</button>
     <p id="mark-toast" class="toast" aria-live="polite"></p>
+    <label class="toggle">
+      <input id="lock" type="checkbox">
+      <span>Lock-screen controls<small>Plays silent audio so your phone shows media controls while locked.</small></span>
+    </label>
   </section>
 
   <section data-view="tracks" class="view" hidden>
@@ -53,7 +57,7 @@
       <button data-cmd='["add","sub-delay",-0.1]'>−0.1</button>
       <span id="subdelay" class="value">0.0 s</span>
       <button data-cmd='["add","sub-delay",0.1]'>+0.1</button>
-      <button data-cmd='["set","sub-delay",0]'>Reset</button>
+      <button data-cmd='["set_property","sub-delay",0]'>Reset</button>
     </div>
     <h2>Speed</h2>
     <div class="row" id="speed-row"></div>

@@ -86,4 +86,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 36px; }
 }
 .tabs button { min-height: 48px; font-size: 14px; background: transparent; color: var(--muted); }
 .tabs button.active { color: var(--accent); background: var(--btn); }
+.toggle { display: flex; gap: 12px; align-items: flex-start; padding: 12px; background: var(--panel); border-radius: 12px; }
+.toggle input { width: 22px; height: 22px; margin-top: 2px; accent-color: var(--accent); }
+.toggle small { display: block; color: var(--muted); font-size: 13px; }
 .offscreen { position: fixed; left: -9999px; top: 0; opacity: 0; }

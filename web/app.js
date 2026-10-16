@@ -85,6 +85,94 @@ function renderPlayer() {
   }
   if (document.activeElement !== $("vol") && typeof state.volume === "number") $("vol").value = state.volume;
   $("volnum").textContent = Math.round(state.volume ?? 0);
+  updateMediaSession();
+}
+
+/* ---------- lock-screen controls ---------- */
+// Phones only show media controls for a page that is playing audio, so we loop a silent clip
+// and mirror mpv's state into the Media Session. The clip keeps playing even while mpv is
+// paused; the session's playbackState is what the lock screen shows.
+
+const lock = { on: false, audio: null, title: null, lastPos: 0 };
+
+function silentWav(seconds = 10, rate = 8000) {
+  const n = seconds * rate, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const text = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  text(0, "RIFF"); v.setUint32(4, 36 + n, true); text(8, "WAVEfmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+  text(36, "data"); v.setUint32(40, n, true);
+  new Uint8Array(buf, 44).fill(128); // 8-bit PCM silence
+  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+}
+
+function setupMediaSession() {
+  if (!("mediaSession" in navigator)) return;
+  const ms = navigator.mediaSession;
+  const handlers = {
+    // Toggle rather than set: if the phone's idea of the state is stale (page throttled while
+    // locked), pressing the button still does what the user expects against mpv's real state.
+    play: () => send(["cycle", "pause"]),
+    pause: () => send(["cycle", "pause"]),
+    stop: () => send(["set_property", "pause", true]),
+    previoustrack: () => send(["playlist-prev"]),
+    nexttrack: () => send(["playlist-next"]),
+    seekbackward: () => send(["seek", -10]),
+    seekforward: () => send(["seek", 10]),
+    seekto: (d) => send(["seek", d.seekTime, "absolute"]),
+  };
+  for (const [action, fn] of Object.entries(handlers)) {
+    try { ms.setActionHandler(action, fn); } catch { /* unsupported action */ }
+  }
+}
+
+function updateMediaSession() {
+  if (!lock.on || !("mediaSession" in navigator)) return;
+  const ms = navigator.mediaSession;
+  const title = state["media-title"] || state.filename || "mpv";
+  if (title !== lock.title) {
+    lock.title = title;
+    ms.metadata = new MediaMetadata({ title, artist: "mpv" });
+  }
+  // Browsers derive the lock-screen play/pause icon from the audio element, not from
+  // playbackState, so the silent clip has to follow mpv's pause state.
+  if (lock.audio) {
+    if (state.pause && !lock.audio.paused) lock.audio.pause();
+    else if (!state.pause && lock.audio.paused) lock.audio.play().catch(() => {});
+  }
+  ms.playbackState = state.pause ? "paused" : "playing";
+  const d = state.duration, p = state["time-pos"];
+  // Position updates are cheap but pointless more than ~once a second.
+  if (d > 0 && Number.isFinite(p) && (Date.now() - lock.lastPos > 1000 || state.pause)) {
+    lock.lastPos = Date.now();
+    try {
+      ms.setPositionState({ duration: d, position: Math.min(p, d), playbackRate: state.pause ? 0.0001 : (state.speed || 1) });
+    } catch { /* invalid state while loading */ }
+  }
+}
+
+async function setLock(on) {
+  lock.on = on;
+  try { localStorage.setItem("mpv-remote-lock", on ? "1" : "0"); } catch { /* private mode */ }
+  $("lock").checked = on;
+  if (!on) {
+    if (lock.audio) lock.audio.pause();
+    if ("mediaSession" in navigator) navigator.mediaSession.metadata = null;
+    lock.title = null;
+    return;
+  }
+  setupMediaSession();
+  if (!lock.audio) {
+    lock.audio = new Audio(silentWav());
+    lock.audio.loop = true;
+  }
+  try {
+    await lock.audio.play();
+    updateMediaSession(); // pauses the clip again right away if mpv is paused
+  } catch {
+    // Autoplay needs a tap; resume on the next one.
+    document.addEventListener("pointerdown", () => lock.on && lock.audio.play().then(updateMediaSession).catch(() => {}), { once: true });
+  }
 }
 
 /* ---------- tracks & chapters ---------- */
@@ -100,10 +188,10 @@ function trackLabel(t) {
 function trackRows(type, prop, isSelected) {
   const tracks = asArray(state["track-list"]).filter((t) => t.type === type);
   const none = !tracks.some(isSelected);
-  const rows = [el("div", { class: "item" + (none ? " current" : ""), onclick: () => send(["set", prop, "no"]) },
+  const rows = [el("div", { class: "item" + (none ? " current" : ""), onclick: () => send(["set_property", prop, "no"]) },
     el("span", { class: "label" }, "Off"))];
   for (const t of tracks) {
-    rows.push(el("div", { class: "item" + (isSelected(t) ? " current" : ""), onclick: () => send(["set", prop, t.id]) },
+    rows.push(el("div", { class: "item" + (isSelected(t) ? " current" : ""), onclick: () => send(["set_property", prop, t.id]) },
       el("span", { class: "label" }, trackLabel(t))));
   }
   return rows;
@@ -120,14 +208,14 @@ function renderTracks() {
   const speed = $("speed-row");
   if (!speed.children.length) {
     for (const s of [0.75, 1, 1.25, 1.5, 2]) {
-      speed.append(el("button", { dataset: { speed: s }, onclick: () => send(["set", "speed", s]) }, `${s}×`));
+      speed.append(el("button", { dataset: { speed: s }, onclick: () => send(["set_property", "speed", s]) }, `${s}×`));
     }
   }
   for (const b of speed.children) b.style.outline = Number(b.dataset.speed) === state.speed ? "2px solid var(--accent)" : "";
 
   const chapters = asArray(state["chapter-list"]);
   setList("chapter-list", chapters.map((c, i) =>
-    el("div", { class: "item" + (i === state.chapter ? " current" : ""), onclick: () => send(["set", "chapter", i]) },
+    el("div", { class: "item" + (i === state.chapter ? " current" : ""), onclick: () => send(["set_property", "chapter", i]) },
       el("span", { class: "label" }, c.title || `Chapter ${i + 1}`),
       el("span", { class: "meta" }, fmt(c.time)))), "No chapters");
 }
@@ -282,7 +370,10 @@ seek.addEventListener("change", () => {
   send(["seek", (seek.value / 1000) * (state.duration || 0), "absolute"]);
   seeking = false;
 });
-$("vol").addEventListener("input", (e) => send(["set", "volume", Number(e.target.value)]));
+$("vol").addEventListener("input", (e) => send(["set_property", "volume", Number(e.target.value)]));
+
+$("lock").addEventListener("change", (e) => setLock(e.target.checked));
+try { if (localStorage.getItem("mpv-remote-lock") === "1") setLock(true); } catch { /* ignore */ }
 
 token = loadToken();
 connect();
