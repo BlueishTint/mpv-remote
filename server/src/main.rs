@@ -80,6 +80,7 @@ async fn main() {
     });
     match sub.as_str() {
         "token" => return println!("{}", cli::token()),
+        "--version" | "version" => return println!("mpv-remote-server {}", env!("CARGO_PKG_VERSION")),
         "pair" => {
             let port = flags.get("--port").and_then(|p| p.parse().ok());
             let (Some(port), Some(token)) = (port, flags.get("--token")) else {
