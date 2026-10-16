@@ -185,8 +185,8 @@ function trackLabel(t) {
   return parts.join(" ");
 }
 
-function trackRows(type, prop, isSelected) {
-  const tracks = asArray(state["track-list"]).filter((t) => t.type === type);
+function trackRows(type, prop, isSelected, exclude = () => false) {
+  const tracks = asArray(state["track-list"]).filter((t) => t.type === type && !exclude(t));
   const none = !tracks.some(isSelected);
   const rows = [el("div", { class: "item" + (none ? " current" : ""), onclick: () => send(["set_property", prop, "no"]) },
     el("span", { class: "label" }, "Off"))];
@@ -202,7 +202,8 @@ function renderTracks() {
   const second = (t) => t.selected && t["main-selection"] === 1;
   setList("audio-list", trackRows("audio", "aid", (t) => t.selected), "No audio tracks");
   setList("sub-list", trackRows("sub", "sid", main), "No subtitles");
-  setList("sub2-list", trackRows("sub", "secondary-sid", second), "No subtitles");
+  // mpv refuses the same track as both primary and secondary, so don't offer it.
+  setList("sub2-list", trackRows("sub", "secondary-sid", second, main), "No subtitles");
   $("subdelay").textContent = `${(state["sub-delay"] ?? 0).toFixed(1)} s`;
 
   const speed = $("speed-row");
@@ -263,7 +264,8 @@ function marksList() {
 }
 
 function renderMarks() {
-  if (document.activeElement && document.activeElement.closest("#marks")) return; // don't clobber typing
+  // Don't rebuild the list under a note being typed; buttons holding focus (e.g. a just-tapped ✕) are fine.
+  if (document.activeElement && document.activeElement.matches("#marks input")) return;
   const marks = marksList();
   setList("marks", marks.map((m) => {
     const note = el("input", { type: "text", value: m.note || "", placeholder: "Add a note", "aria-label": "Note" });
