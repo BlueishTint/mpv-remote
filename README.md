@@ -91,9 +91,13 @@ on networks you don't trust. The connection is plain HTTP, which is visible to o
 
 ## Limitations
 
-- **No full app install.** Browsers only offer that on HTTPS, and a LAN address over HTTP doesn't qualify.
-  *Add to Home Screen* still gives you a shortcut. Android Chrome can be told to trust one address via
-  `chrome://flags` → "Insecure origins treated as secure".
+- **Full app install needs HTTPS.** Browsers only offer it from a secure origin, and a LAN address over
+  HTTP doesn't qualify. *Add to Home Screen* still gives you a shortcut. The page ships a web app manifest,
+  icons and a service worker, so it becomes installable wherever the browser trusts the origin: for example
+  behind [Tailscale Serve](https://tailscale.com/kb/1242/tailscale-serve) (real HTTPS certificate), or, as a
+  best-effort trick on Android Chrome, by adding the exact address (`http://192.168.x.x:8765`) under
+  `chrome://flags` → "Insecure origins treated as secure". The flag needs a fixed IP for the PC and may
+  still only produce a plain shortcut.
 - **Lock-screen controls** work by playing a silent clip in the page, which phones need before they show
   media controls. Android Chrome and iOS Safari behave differently, and a paused page may lose the controls
   after a few minutes. Turn the toggle on under the Player tab.

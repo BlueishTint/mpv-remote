@@ -377,5 +377,8 @@ $("vol").addEventListener("input", (e) => send(["set_property", "volume", Number
 $("lock").addEventListener("change", (e) => setLock(e.target.checked));
 try { if (localStorage.getItem("mpv-remote-lock") === "1") setLock(true); } catch { /* ignore */ }
 
+// Only registers on a secure context (https, localhost, or an origin the browser was told to trust).
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+
 token = loadToken();
 connect();

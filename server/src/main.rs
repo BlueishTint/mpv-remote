@@ -233,8 +233,12 @@ async fn static_handler(uri: Uri) -> Response {
     let path = if path.is_empty() { "index.html" } else { path };
     match Web::get(path) {
         Some(file) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            ([(header::CONTENT_TYPE, mime.as_ref().to_owned())], file.data).into_response()
+            let mime = if path.ends_with(".webmanifest") {
+                "application/manifest+json".to_owned()
+            } else {
+                mime_guess::from_path(path).first_or_octet_stream().as_ref().to_owned()
+            };
+            ([(header::CONTENT_TYPE, mime)], file.data).into_response()
         }
         None => StatusCode::NOT_FOUND.into_response(),
     }
