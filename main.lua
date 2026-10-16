@@ -333,6 +333,14 @@ local function toggle_pairing()
     if pairing then hide_pairing() else show_pairing() end
 end
 
+-- Sent by the helper whenever a phone connects: no need to keep the QR up once it has been scanned.
+mp.register_script_message("mpv-remote-connected", function()
+    if pairing then
+        hide_pairing()
+        mp.osd_message("Phone connected", 3)
+    end
+end)
+
 mp.observe_property("osd-dimensions", "native", function() render_pairing() end)
 mp.add_key_binding("Ctrl+r", "pair", toggle_pairing)
 mp.register_script_message("pair", toggle_pairing)

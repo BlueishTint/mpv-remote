@@ -1,0 +1,76 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x86_64, os: windows-latest, target: x86_64-pc-windows-msvc, exe: mpv-remote-server.exe }
+          - { name: linux-x86_64, os: ubuntu-latest, target: x86_64-unknown-linux-gnu, exe: mpv-remote-server }
+          - { name: linux-aarch64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, exe: mpv-remote-server }
+          - { name: macos-aarch64, os: macos-latest, target: aarch64-apple-darwin, exe: mpv-remote-server }
+          - { name: macos-x86_64, os: macos-latest, target: x86_64-apple-darwin, exe: mpv-remote-server }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+          key: ${{ matrix.target }}
+
+      - name: Build
+        working-directory: server
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p stage dist
+          cp main.lua stage/
+          cp "server/target/${{ matrix.target }}/release/${{ matrix.exe }}" stage/
+          echo "${GITHUB_REF_NAME}" > stage/VERSION
+          asset="mpv-remote-${{ matrix.name }}.zip"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            (cd stage && 7z a -tzip "../dist/$asset" . > /dev/null)
+          else
+            (cd stage && zip -qr "../dist/$asset" .)
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/*.zip
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.zip > SHA256SUMS
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

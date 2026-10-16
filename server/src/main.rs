@@ -165,6 +165,8 @@ async fn client(socket: WebSocket, app: Arc<App>) {
     if tx.send(Message::Text(app.hub.snapshot().into())).await.is_err() {
         return;
     }
+    // Lets main.lua dismiss the pairing QR as soon as a phone gets through.
+    app.hub.send_raw(vec![json!("script-message"), json!("mpv-remote-connected")]);
     loop {
         tokio::select! {
             ev = events.recv() => match ev {
