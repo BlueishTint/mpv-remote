@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111418">
+<title>mpv remote</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <p id="status" class="status"></p>
+
+  <div id="mini" class="mini" hidden>
+    <span id="mini-title" class="mini-title">—</span>
+    <button id="mini-mark" class="icon" aria-label="Mark this moment">⚑</button>
+    <button id="mini-play" class="icon" aria-label="Play/pause">▶</button>
+  </div>
+
+  <section data-view="player" class="view">
+    <h1 id="title">—</h1>
+    <div class="seek">
+      <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Seek">
+      <div class="times"><span id="pos">0:00</span><span id="dur">0:00</span></div>
+    </div>
+    <div class="row">
+      <button data-cmd='["playlist-prev"]' aria-label="Previous file">⏮</button>
+      <button data-cmd='["seek",-10]' aria-label="Back 10 seconds">−10</button>
+      <button id="play" class="primary" aria-label="Play/pause">▶</button>
+      <button data-cmd='["seek",10]' aria-label="Forward 10 seconds">+10</button>
+      <button data-cmd='["playlist-next"]' aria-label="Next file">⏭</button>
+    </div>
+    <div class="row">
+      <button data-cmd='["seek",85]'>Skip +85</button>
+      <button data-cmd='["cycle","fullscreen"]'>Fullscreen</button>
+      <button data-cmd='["cycle","mute"]' id="mute">Mute</button>
+    </div>
+    <div class="vol">
+      <span>Vol</span>
+      <input id="vol" type="range" min="0" max="130" value="100" aria-label="Volume">
+      <span id="volnum">100</span>
+    </div>
+    <button id="mark" class="wide">⚑ Mark this moment</button>
+    <p id="mark-toast" class="toast" aria-live="polite"></p>
+  </section>
+
+  <section data-view="tracks" class="view" hidden>
+    <h2>Audio</h2><div id="audio-list" class="list"></div>
+    <h2>Subtitles</h2><div id="sub-list" class="list"></div>
+    <h2>Secondary subtitles</h2><div id="sub2-list" class="list"></div>
+    <h2>Subtitle delay</h2>
+    <div class="row">
+      <button data-cmd='["add","sub-delay",-0.1]'>−0.1</button>
+      <span id="subdelay" class="value">0.0 s</span>
+      <button data-cmd='["add","sub-delay",0.1]'>+0.1</button>
+      <button data-cmd='["set","sub-delay",0]'>Reset</button>
+    </div>
+    <h2>Speed</h2>
+    <div class="row" id="speed-row"></div>
+    <h2>Chapters</h2><div id="chapter-list" class="list"></div>
+  </section>
+
+  <section data-view="playlist" class="view" hidden>
+    <h2>Playlist</h2>
+    <div id="playlist" class="list"></div>
+  </section>
+
+  <section data-view="files" class="view" hidden>
+    <div class="row crumbs">
+      <button id="files-up" class="small">↑ Up</button>
+      <span id="files-path" class="path"></span>
+    </div>
+    <div id="files" class="list"></div>
+  </section>
+
+  <section data-view="marks" class="view" hidden>
+    <div class="row">
+      <button id="marks-add">⚑ Add mark</button>
+      <button id="marks-copy">Copy all</button>
+    </div>
+    <p id="marks-hint" class="toast"></p>
+    <div id="marks" class="list"></div>
+    <textarea id="marks-text" class="offscreen" aria-hidden="true" tabindex="-1"></textarea>
+  </section>
+
+  <nav class="tabs">
+    <button data-tab="player" class="active">Player</button>
+    <button data-tab="tracks">Tracks</button>
+    <button data-tab="playlist">Queue</button>
+    <button data-tab="files">Files</button>
+    <button data-tab="marks">Marks</button>
+  </nav>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
