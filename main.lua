@@ -10,7 +10,7 @@ local options = require "mp.options"
 local opts = {
     port = 8765,
     bind = "0.0.0.0",   -- interface the server listens on
-    host = "",          -- override the LAN IP shown in the QR code
+    host = "",          -- address in the QR code: empty = auto LAN IP, "tailscale", an IP/name, or a full URL
     token = "",         -- generated on first run
     autostart = true,
     server_path = "",   -- override the helper location (development)

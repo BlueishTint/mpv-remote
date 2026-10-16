@@ -35,6 +35,7 @@ Flatpak, Snap), downloads the matching release, verifies its checksum, and insta
 | Pin a version | `-Version v0.1.0` | `--version v0.1.0` |
 | Remove | `-Uninstall` | `--uninstall` |
 | Add a firewall rule (admin) | `-OpenFirewall` | – |
+| Same, also admitting [Tailscale](#tailscale) | `-AllowTailscale` | – |
 
 To pass options to the Windows one-liner:
 `& ([scriptblock]::Create((irm <url>/install.ps1))) -OpenFirewall`.
@@ -68,7 +69,7 @@ New-NetFirewallRule -DisplayName mpv-remote -Direction Inbound -Action Allow -Pr
 | `token` | generated | Pairing secret. Delete the line to invalidate all paired phones. |
 | `port` | `8765` | |
 | `bind` | `0.0.0.0` | Interface to listen on. `127.0.0.1` disables phone access. |
-| `host` | auto | LAN IP shown in the QR code, if the wrong one is chosen. |
+| `host` | auto | Address in the QR code. Empty = auto-detected LAN IP. `tailscale` = this PC's [Tailscale](#tailscale) address. Or an IP/name, or a full URL such as `https://pc.example.ts.net`. |
 | `browse_roots` | your home folder | Folders the phone may browse and open files from, separated by `\|`. |
 | `autostart` | `yes` | Start the helper when mpv starts. |
 | `pair_seconds` | `60` | How long the QR code stays up. |
@@ -78,6 +79,38 @@ Key bindings: **Ctrl+r** shows the pairing QR. To bind a key for marking from th
 `input.conf`: `m script-binding mpv_remote/mark`.
 
 Marks are saved as JSON in `<mpv config>/mpv-remote/marks/<file name>.json`.
+
+## Tailscale
+
+[Tailscale](https://tailscale.com) is a free VPN that gives your devices private addresses that work from
+anywhere. Use it to control mpv when your phone and PC can't see each other on the same network, or to get a
+trusted HTTPS address.
+
+1. Install Tailscale on the PC and on the phone, and sign in to the same account on both.
+2. In `mpv-remote.conf` set `host=tailscale`, so the QR code carries the PC's Tailscale address.
+3. Let Tailscale traffic through the Windows firewall. The default rule only admits your local subnet, so run
+   the installer with `-AllowTailscale`, or in an admin PowerShell:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName mpv-remote -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8765 -RemoteAddress LocalSubnet,'100.64.0.0/10' -Profile Any
+   ```
+
+4. Press Ctrl+r and scan the QR code with the phone as usual.
+
+**HTTPS and a full app install.** Tailscale can also publish the helper under a real certificate, which lets the
+page install as an app without the Chrome flag. This needs MagicDNS and HTTPS Certificates enabled once on the
+DNS page of the Tailscale admin console. Then, on the PC run:
+
+```sh
+tailscale serve --bg 8765
+```
+
+It prints an address like `https://pc.your-tailnet.ts.net`. Put that in the config as
+`host=https://pc.your-tailnet.ts.net` and pair again. This route is reached through Tailscale itself, so the
+firewall rule above isn't needed for it, and traffic is encrypted.
+
+Tailscale's addresses are in `100.64.0.0/10`. The QR code's automatic detection ignores virtual adapters on
+purpose, which is why `host=tailscale` has to be set explicitly.
 
 ## Security
 

@@ -17,6 +17,8 @@
   Folder or base URL containing the release assets (offline installs, testing).
 .PARAMETER OpenFirewall
   Add an inbound firewall rule for the helper, limited to your local subnet. Needs an admin shell.
+.PARAMETER AllowTailscale
+  Like -OpenFirewall, but the rule also admits Tailscale addresses (100.64.0.0/10), for reaching the PC over a tailnet.
 .PARAMETER Uninstall
   Remove the plugin. Your settings and saved marks are kept.
 #>
@@ -27,6 +29,7 @@ param(
     [string]$Repo = $(if ($env:MPV_REMOTE_REPO) { $env:MPV_REMOTE_REPO } else { 'BlueishTint/mpv-remote' }),
     [string]$Source = $env:MPV_REMOTE_SOURCE,
     [switch]$OpenFirewall,
+    [switch]$AllowTailscale,
     [switch]$Uninstall
 )
 
@@ -84,15 +87,19 @@ function Get-Asset($name, $destination) {
 }
 
 function Set-Firewall($exe) {
+    # Local subnet always; the Tailscale range only when asked for.
+    $remote = if ($AllowTailscale) { @('LocalSubnet', '100.64.0.0/10') } else { @('LocalSubnet') }
+    $remoteText = ($remote | ForEach-Object { if ($_ -eq 'LocalSubnet') { $_ } else { "'$_'" } }) -join ','
     if (-not (Test-Admin)) {
         Write-Warning 'Not running as administrator, so no firewall rule was added. In an admin PowerShell run:'
-        Write-Host "  New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -RemoteAddress LocalSubnet -Profile Any"
+        Write-Host "  New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -RemoteAddress $remoteText -Profile Any"
         return
     }
     Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
     New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Action Allow -Protocol TCP `
-        -LocalPort $Port -RemoteAddress LocalSubnet -Profile Any -Program $exe | Out-Null
-    Write-Host "Firewall rule '$RuleName' added (TCP $Port, local subnet only)."
+        -LocalPort $Port -RemoteAddress $remote -Profile Any -Program $exe | Out-Null
+    $scope = if ($AllowTailscale) { 'local subnet and Tailscale' } else { 'local subnet only' }
+    Write-Host "Firewall rule '$RuleName' added (TCP $Port, $scope)."
 }
 
 function Install-MpvRemote {
@@ -152,7 +159,8 @@ function Install-MpvRemote {
 '@ | Set-Content $conf -Encoding utf8
     }
 
-    if ($OpenFirewall) { Set-Firewall (Join-Path $target 'mpv-remote-server.exe') }
+    $wantFirewall = $OpenFirewall -or $AllowTailscale
+    if ($wantFirewall) { Set-Firewall (Join-Path $target 'mpv-remote-server.exe') }
 
     # Ignore VPN-style virtual networks (WARP etc.); only the real LAN matters for the phone.
     $publicNet = Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object {
@@ -161,7 +169,7 @@ function Install-MpvRemote {
     Write-Host ''
     Write-Host "Installed mpv-remote $(Get-Content (Join-Path $target 'VERSION') -ErrorAction SilentlyContinue) into $config" -ForegroundColor Green
     Write-Host 'Next: start mpv, play something, press Ctrl+r and scan the QR code with your phone.'
-    if ($publicNet -and -not $OpenFirewall) {
+    if ($publicNet -and -not $wantFirewall) {
         Write-Warning "Your network '$($publicNet[0].Name)' is set to Public, so Windows will block your phone. Re-run with -OpenFirewall in an admin shell, or switch the network to Private."
     }
 }
