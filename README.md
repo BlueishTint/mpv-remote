@@ -68,6 +68,7 @@ New-NetFirewallRule -DisplayName mpv-remote -Direction Inbound -Action Allow -Pr
 |---|---|---|
 | `token` | generated | Pairing secret. Delete the line to invalidate all paired phones. |
 | `port` | `8765` | |
+| `tailscale_host` | none | Address to put in the QR code *instead of* `host` while [Tailscale](#tailscale) is connected on the PC: a Tailscale Serve URL, a MagicDNS name or an IP. Ignored while Tailscale is off. |
 | `bind` | `0.0.0.0` | Interface to listen on. `127.0.0.1` disables phone access. |
 | `host` | auto | Address in the QR code. Empty = auto-detected LAN IP. `tailscale` = this PC's [Tailscale](#tailscale) address while Tailscale is connected, otherwise the LAN IP. Or an IP/name, or a full URL such as `https://pc.example.ts.net`. |
 | `browse_roots` | your home folder | Folders the phone may browse and open files from, separated by `\|`. |
@@ -108,8 +109,10 @@ tailscale serve --bg 8765
 ```
 
 It prints an address like `https://pc.your-tailnet.ts.net`. Put that in the config as
-`host=https://pc.your-tailnet.ts.net` and pair again. This route is reached through Tailscale itself, so the
-firewall rule above isn't needed for it, and traffic is encrypted.
+`tailscale_host=https://pc.your-tailnet.ts.net` and pair again. That address only works through the tailnet, so
+the QR code uses it only while Tailscale is connected on the PC and falls back to the normal LAN address
+otherwise (don't put it in `host=`, which would show it all the time). This route is reached through Tailscale
+itself, so the firewall rule above isn't needed for it, and traffic is encrypted.
 
 Tailscale's addresses are in `100.64.0.0/10`. The QR code's automatic detection ignores virtual adapters on
 purpose, which is why `host=tailscale` has to be set explicitly.

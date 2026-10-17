@@ -71,7 +71,7 @@ fn parse_args(m: HashMap<String, String>) -> Result<Args, String> {
 
 #[tokio::main]
 async fn main() {
-    const USAGE: &str = "usage:\n  mpv-remote-server serve --pipe <path> --port <n> --token <t> [--bind <addr>]\n  mpv-remote-server pair --port <n> --token <t> [--host <ip>]\n  mpv-remote-server token";
+    const USAGE: &str = "usage:\n  mpv-remote-server serve --pipe <path> --port <n> --token <t> [--bind <addr>]\n  mpv-remote-server pair --port <n> --token <t> [--host <addr>] [--tailscale-host <addr>]\n  mpv-remote-server token";
     let mut argv = std::env::args().skip(1);
     let sub = argv.next().unwrap_or_default();
     let flags = flag_map(argv).unwrap_or_else(|e| {
@@ -87,7 +87,7 @@ async fn main() {
                 eprintln!("{USAGE}");
                 std::process::exit(2);
             };
-            if let Err(e) = cli::pair(flags.get("--host").cloned(), port, token) {
+            if let Err(e) = cli::pair(flags.get("--host").cloned(), flags.get("--tailscale-host").cloned(), port, token) {
                 eprintln!("{e}");
                 std::process::exit(1);
             }

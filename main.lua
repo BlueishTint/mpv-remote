@@ -11,6 +11,7 @@ local opts = {
     port = 8765,
     bind = "0.0.0.0",   -- interface the server listens on
     host = "",          -- address in the QR code: empty = auto LAN IP, "tailscale" (when connected, else LAN), an IP/name, or a full URL
+    tailscale_host = "", -- address to use instead while Tailscale is connected (e.g. a Tailscale Serve URL)
     token = "",         -- generated on first run
     autostart = true,
     server_path = "",   -- override the helper location (development)
@@ -312,6 +313,10 @@ local function show_pairing()
     if opts.host ~= "" then
         args[#args + 1] = "--host"
         args[#args + 1] = opts.host
+    end
+    if opts.tailscale_host ~= "" then
+        args[#args + 1] = "--tailscale-host"
+        args[#args + 1] = opts.tailscale_host
     end
     local res = run(args)
     if res.status ~= 0 then

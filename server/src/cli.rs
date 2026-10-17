@@ -94,16 +94,36 @@ pub fn tailscale_ip() -> Option<Ipv4Addr> {
     from_adapter.or_else(tailscale_cli_ip)
 }
 
-/// Scheme + authority the phone should open. `host` comes from `host=` in mpv-remote.conf:
-/// empty = auto-detected LAN address, `tailscale` = this machine's Tailscale address when
-/// Tailscale is connected (else the LAN address), a full URL (`https://pc.tailnet.ts.net`) is used as is, anything else is an IP or name
-/// (a `:port` suffix is respected, otherwise `port` is appended).
+/// An address written by the user: a full URL is used as is, `name:port` or `ip:port` gets a scheme,
+/// a bare name or IP gets `port` appended.
+fn explicit_base(h: &str, port: u16) -> String {
+    if h.contains("://") {
+        h.trim_end_matches('/').to_owned()
+    } else if h.contains(':') {
+        format!("http://{h}")
+    } else {
+        format!("http://{h}:{port}")
+    }
+}
+
+/// Scheme + authority the phone should open, from `host=` and `tailscale_host=` in mpv-remote.conf.
+///
+/// `tailscale_host`, when set, wins while Tailscale is connected (typically a Tailscale Serve URL such as
+/// `https://pc.tailnet.ts.net`, which only works through the tailnet); when Tailscale is off it is ignored.
+/// Otherwise `host`: empty = auto-detected LAN address, `tailscale` = this machine's Tailscale address while
+/// connected (else the LAN address), anything else is used as written (see `explicit_base`).
 fn base_url(
     host: Option<&str>,
+    tailscale_host: Option<&str>,
     port: u16,
-    lan: impl FnOnce() -> Option<Ipv4Addr>,
-    tailscale: impl FnOnce() -> Option<Ipv4Addr>,
+    lan: impl Fn() -> Option<Ipv4Addr>,
+    tailscale: impl Fn() -> Option<Ipv4Addr>,
 ) -> Result<String, String> {
+    if let Some(th) = tailscale_host.map(str::trim).filter(|h| !h.is_empty()) {
+        if tailscale().is_some() {
+            return Ok(explicit_base(th, port));
+        }
+    }
     match host.map(str::trim).filter(|h| !h.is_empty()) {
         None => lan()
             .map(|ip| format!("http://{ip}:{port}"))
@@ -114,15 +134,13 @@ fn base_url(
             .or_else(lan)
             .map(|ip| format!("http://{ip}:{port}"))
             .ok_or_else(|| "found neither a Tailscale nor a LAN address; set host=<ip>".to_string()),
-        Some(h) if h.contains("://") => Ok(h.trim_end_matches('/').to_owned()),
-        Some(h) if h.contains(':') => Ok(format!("http://{h}")),
-        Some(h) => Ok(format!("http://{h}:{port}")),
+        Some(h) => Ok(explicit_base(h, port)),
     }
 }
 
 /// Prints the pairing URL, then the QR matrix as rows of `0`/`1` for the plugin to draw.
-pub fn pair(host: Option<String>, port: u16, token: &str) -> Result<(), String> {
-    let base = base_url(host.as_deref(), port, lan_ip, tailscale_ip)?;
+pub fn pair(host: Option<String>, tailscale_host: Option<String>, port: u16, token: &str) -> Result<(), String> {
+    let base = base_url(host.as_deref(), tailscale_host.as_deref(), port, lan_ip, tailscale_ip)?;
     let url = format!("{base}/?t={token}");
     let code = QrCode::new(url.as_bytes()).map_err(|e| e.to_string())?;
     println!("{url}");
@@ -140,7 +158,7 @@ mod tests {
     const TS: Option<Ipv4Addr> = Some(Ipv4Addr::new(100, 101, 102, 103));
 
     fn url(host: Option<&str>) -> Result<String, String> {
-        base_url(host, 8765, || LAN, || TS)
+        base_url(host, None, 8765, || LAN, || TS)
     }
 
     #[test]
@@ -167,19 +185,19 @@ mod tests {
 
     #[test]
     fn tailscale_keyword_falls_back_to_lan_when_tailscale_is_off() {
-        let url = base_url(Some("tailscale"), 8765, || LAN, || None).unwrap();
+        let url = base_url(Some("tailscale"), None, 8765, || LAN, || None).unwrap();
         assert_eq!(url, "http://192.168.1.93:8765");
     }
 
     #[test]
     fn tailscale_keyword_prefers_tailscale_when_both_exist() {
-        let url = base_url(Some("tailscale"), 8765, || LAN, || TS).unwrap();
+        let url = base_url(Some("tailscale"), None, 8765, || LAN, || TS).unwrap();
         assert_eq!(url, "http://100.101.102.103:8765");
     }
 
     #[test]
     fn tailscale_keyword_errors_only_when_nothing_is_available() {
-        assert!(base_url(Some("tailscale"), 8765, || None, || None).is_err());
+        assert!(base_url(Some("tailscale"), None, 8765, || None, || None).is_err());
     }
 
     #[test]
@@ -193,7 +211,7 @@ mod tests {
 
     #[test]
     fn lan_missing_is_an_error() {
-        assert!(base_url(None, 8765, || None, || TS).is_err());
+        assert!(base_url(None, None, 8765, || None, || TS).is_err());
     }
 }
 
@@ -229,5 +247,47 @@ mod status_tests {
     fn running_without_an_ipv4_in_the_tailnet_range_is_ignored() {
         let json = br#"{"BackendState":"Running","TailscaleIPs":["192.168.1.5","fd7a:115c:a1e0::1"]}"#;
         assert_eq!(parse_tailscale_status(json), None);
+    }
+}
+
+#[cfg(test)]
+mod tailscale_host_tests {
+    use super::*;
+
+    const LAN: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 93));
+    const TS: Option<Ipv4Addr> = Some(Ipv4Addr::new(100, 101, 102, 103));
+    const SERVE: &str = "https://pc.tail1234.ts.net";
+
+    #[test]
+    fn serve_url_is_used_only_while_tailscale_is_connected() {
+        let on = base_url(None, Some(SERVE), 8765, || LAN, || TS).unwrap();
+        let off = base_url(None, Some(SERVE), 8765, || LAN, || None).unwrap();
+        assert_eq!(on, SERVE);
+        assert_eq!(off, "http://192.168.1.93:8765");
+    }
+
+    #[test]
+    fn host_is_the_off_state_address_when_both_are_set() {
+        let off = base_url(Some("10.0.0.5"), Some(SERVE), 8765, || LAN, || None).unwrap();
+        assert_eq!(off, "http://10.0.0.5:8765");
+        let on = base_url(Some("10.0.0.5"), Some(SERVE), 8765, || LAN, || TS).unwrap();
+        assert_eq!(on, SERVE);
+    }
+
+    #[test]
+    fn tailscale_host_accepts_names_and_ips_too() {
+        assert_eq!(base_url(None, Some("pc.tail1234.ts.net"), 8765, || LAN, || TS).unwrap(), "http://pc.tail1234.ts.net:8765");
+        assert_eq!(base_url(None, Some("100.101.102.103"), 8765, || LAN, || TS).unwrap(), "http://100.101.102.103:8765");
+        assert_eq!(base_url(None, Some(" https://pc.tail1234.ts.net/ "), 8765, || LAN, || TS).unwrap(), SERVE);
+    }
+
+    #[test]
+    fn blank_tailscale_host_is_ignored() {
+        assert_eq!(base_url(None, Some("  "), 8765, || LAN, || TS).unwrap(), "http://192.168.1.93:8765");
+    }
+
+    #[test]
+    fn tailscale_host_with_no_lan_address_still_errors_when_tailscale_is_off() {
+        assert!(base_url(None, Some(SERVE), 8765, || None, || None).is_err());
     }
 }
