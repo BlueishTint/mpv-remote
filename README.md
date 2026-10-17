@@ -69,7 +69,7 @@ New-NetFirewallRule -DisplayName mpv-remote -Direction Inbound -Action Allow -Pr
 | `token` | generated | Pairing secret. Delete the line to invalidate all paired phones. |
 | `port` | `8765` | |
 | `bind` | `0.0.0.0` | Interface to listen on. `127.0.0.1` disables phone access. |
-| `host` | auto | Address in the QR code. Empty = auto-detected LAN IP. `tailscale` = this PC's [Tailscale](#tailscale) address. Or an IP/name, or a full URL such as `https://pc.example.ts.net`. |
+| `host` | auto | Address in the QR code. Empty = auto-detected LAN IP. `tailscale` = this PC's [Tailscale](#tailscale) address while Tailscale is connected, otherwise the LAN IP. Or an IP/name, or a full URL such as `https://pc.example.ts.net`. |
 | `browse_roots` | your home folder | Folders the phone may browse and open files from, separated by `\|`. |
 | `autostart` | `yes` | Start the helper when mpv starts. |
 | `pair_seconds` | `60` | How long the QR code stays up. |
@@ -87,7 +87,9 @@ anywhere. Use it to control mpv when your phone and PC can't see each other on t
 trusted HTTPS address.
 
 1. Install Tailscale on the PC and on the phone, and sign in to the same account on both.
-2. In `mpv-remote.conf` set `host=tailscale`, so the QR code carries the PC's Tailscale address.
+2. In `mpv-remote.conf` set `host=tailscale`. While Tailscale is connected on the PC, the QR code carries its
+   Tailscale address; when it isn't, the QR code falls back to the normal LAN address. So the setting can stay
+   on permanently, and you only switch Tailscale on (on both devices) when you need it.
 3. Let Tailscale traffic through the Windows firewall. The default rule only admits your local subnet, so run
    the installer with `-AllowTailscale`, or in an admin PowerShell:
 
@@ -111,6 +113,12 @@ firewall rule above isn't needed for it, and traffic is encrypted.
 
 Tailscale's addresses are in `100.64.0.0/10`. The QR code's automatic detection ignores virtual adapters on
 purpose, which is why `host=tailscale` has to be set explicitly.
+
+**Using it alongside other VPNs and filters.** Only the PC's side is automatic. If Tailscale is connected on
+the PC but not on the phone, the phone can't reach the Tailscale address, so switch it off on the PC when you
+don't need it. On Android, apps that filter traffic through the VPN slot (many DNS filters do) can't run at the
+same time as Tailscale. On the PC, other tunnel clients may also claim addresses in `100.64.0.0/10`, so
+check their split-tunnel settings if the two don't work together.
 
 ## Security
 

@@ -48,21 +48,36 @@ fn in_tailnet_range(ip: Ipv4Addr) -> bool {
     o[0] == 100 && (64..128).contains(&o[1])
 }
 
-/// First IPv4 printed by `tailscale ip -4`. Covers platforms where the adapter isn't named "tailscale"
-/// (macOS uses `utunN`).
+/// The Tailscale IPv4 from `tailscale status --json`, but only while it is actually connected.
+/// A stopped client still reports its assigned address (`tailscale ip` does too), so the backend
+/// state has to be checked or "off" would look like "on".
+fn parse_tailscale_status(json: &[u8]) -> Option<Ipv4Addr> {
+    let status: serde_json::Value = serde_json::from_slice(json).ok()?;
+    if status.get("BackendState")?.as_str()? != "Running" {
+        return None;
+    }
+    status
+        .get("TailscaleIPs")?
+        .as_array()?
+        .iter()
+        .filter_map(|ip| ip.as_str()?.parse::<Ipv4Addr>().ok())
+        .find(|ip| in_tailnet_range(*ip))
+}
+
+/// Asks the Tailscale CLI. Covers platforms where the adapter isn't named "tailscale" (macOS uses `utunN`).
 fn tailscale_cli_ip() -> Option<Ipv4Addr> {
-    for exe in ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"] {
+    const CANDIDATES: [&str; 3] = [
+        "tailscale",
+        r"C:\Program Files\Tailscale\tailscale.exe",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    ];
+    CANDIDATES.iter().find_map(|exe| {
         let mut cmd = std::process::Command::new(exe);
-        cmd.args(["ip", "-4"]).stderr(std::process::Stdio::null());
+        cmd.args(["status", "--json"]).stderr(std::process::Stdio::null());
         #[cfg(windows)]
         std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW
-        let Ok(out) = cmd.output() else { continue };
-        let ip = String::from_utf8_lossy(&out.stdout).lines().next().and_then(|l| l.trim().parse().ok());
-        if let Some(ip) = ip.filter(|ip| in_tailnet_range(*ip)) {
-            return Some(ip);
-        }
-    }
-    None
+        parse_tailscale_status(&cmd.output().ok()?.stdout)
+    })
 }
 
 /// This machine's Tailscale IPv4, from the adapter if it is recognisable, else from the CLI.
@@ -80,8 +95,8 @@ pub fn tailscale_ip() -> Option<Ipv4Addr> {
 }
 
 /// Scheme + authority the phone should open. `host` comes from `host=` in mpv-remote.conf:
-/// empty = auto-detected LAN address, `tailscale` = this machine's Tailscale address,
-/// a full URL (`https://pc.tailnet.ts.net`) is used as is, anything else is an IP or name
+/// empty = auto-detected LAN address, `tailscale` = this machine's Tailscale address when
+/// Tailscale is connected (else the LAN address), a full URL (`https://pc.tailnet.ts.net`) is used as is, anything else is an IP or name
 /// (a `:port` suffix is respected, otherwise `port` is appended).
 fn base_url(
     host: Option<&str>,
@@ -93,9 +108,12 @@ fn base_url(
         None => lan()
             .map(|ip| format!("http://{ip}:{port}"))
             .ok_or_else(|| "no private LAN IPv4 found; set host= in mpv-remote.conf".to_string()),
+        // Tailscale when it is connected, the ordinary LAN address when it isn't, so one setting
+        // works both away from home (Tailscale on) and at home (Tailscale off).
         Some(h) if h.eq_ignore_ascii_case("tailscale") => tailscale()
+            .or_else(lan)
             .map(|ip| format!("http://{ip}:{port}"))
-            .ok_or_else(|| "no Tailscale address found; is Tailscale installed and signed in? (or set host=<ip>)".to_string()),
+            .ok_or_else(|| "found neither a Tailscale nor a LAN address; set host=<ip>".to_string()),
         Some(h) if h.contains("://") => Ok(h.trim_end_matches('/').to_owned()),
         Some(h) if h.contains(':') => Ok(format!("http://{h}")),
         Some(h) => Ok(format!("http://{h}:{port}")),
@@ -148,9 +166,20 @@ mod tests {
     }
 
     #[test]
-    fn tailscale_missing_is_an_error_not_a_fallback() {
-        let err = base_url(Some("tailscale"), 8765, || LAN, || None).unwrap_err();
-        assert!(err.contains("Tailscale"));
+    fn tailscale_keyword_falls_back_to_lan_when_tailscale_is_off() {
+        let url = base_url(Some("tailscale"), 8765, || LAN, || None).unwrap();
+        assert_eq!(url, "http://192.168.1.93:8765");
+    }
+
+    #[test]
+    fn tailscale_keyword_prefers_tailscale_when_both_exist() {
+        let url = base_url(Some("tailscale"), 8765, || LAN, || TS).unwrap();
+        assert_eq!(url, "http://100.101.102.103:8765");
+    }
+
+    #[test]
+    fn tailscale_keyword_errors_only_when_nothing_is_available() {
+        assert!(base_url(Some("tailscale"), 8765, || None, || None).is_err());
     }
 
     #[test]
@@ -165,5 +194,40 @@ mod tests {
     #[test]
     fn lan_missing_is_an_error() {
         assert!(base_url(None, 8765, || None, || TS).is_err());
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    #[test]
+    fn running_client_yields_its_ipv4() {
+        let json = br#"{"BackendState":"Running","TailscaleIPs":["fd7a:115c:a1e0::1","100.102.235.81"]}"#;
+        assert_eq!(parse_tailscale_status(json), Some(Ipv4Addr::new(100, 102, 235, 81)));
+    }
+
+    #[test]
+    fn stopped_client_is_treated_as_off_even_though_it_reports_an_address() {
+        let json = br#"{"BackendState":"Stopped","TailscaleIPs":["100.102.235.81"]}"#;
+        assert_eq!(parse_tailscale_status(json), None);
+    }
+
+    #[test]
+    fn other_states_and_garbage_are_off() {
+        for json in [
+            &br#"{"BackendState":"NeedsLogin","TailscaleIPs":null}"#[..],
+            &br#"{"BackendState":"Starting"}"#[..],
+            &b"Tailscale is stopped."[..],
+            &b""[..],
+        ] {
+            assert_eq!(parse_tailscale_status(json), None);
+        }
+    }
+
+    #[test]
+    fn running_without_an_ipv4_in_the_tailnet_range_is_ignored() {
+        let json = br#"{"BackendState":"Running","TailscaleIPs":["192.168.1.5","fd7a:115c:a1e0::1"]}"#;
+        assert_eq!(parse_tailscale_status(json), None);
     }
 }
