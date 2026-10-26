@@ -327,14 +327,49 @@ function onProps(names) {
 
 /* ---------- connection ---------- */
 
+// A phone that sleeps or switches networks leaves a socket that is dead but doesn't know it, and the
+// browser can take many seconds to notice. So: reconnect the moment the page is visible again, give up
+// on connection attempts quickly, retry fast, and ping while idle to catch silently dead connections.
+
+const CONNECT_TIMEOUT_MS = 2500;
+const PING_EVERY_MS = 4000;
+const DEAD_AFTER_MS = 10000;
+let lastMsg = 0;
+let retries = 0;
+let retryTimer = null;
+let connectTimer = null;
+
+function setStatus(text) { $("status").textContent = text; }
+
+function scheduleReconnect() {
+  clearTimeout(retryTimer);
+  // 250 ms, 500 ms, 1 s, then every 2 s (also covers mpv being restarted).
+  retryTimer = setTimeout(connect, Math.min(250 * 2 ** retries++, 2000));
+}
+
 function connect() {
+  clearTimeout(retryTimer);
+  clearTimeout(connectTimer);
   if (!token) {
-    $("status").textContent = "Not paired. Scan the QR code shown in mpv (Ctrl+r).";
+    setStatus("Not paired. Scan the QR code shown in mpv (Ctrl+r).");
     return;
   }
-  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?t=${encodeURIComponent(token)}`);
-  ws.onopen = () => { $("status").textContent = ""; };
-  ws.onmessage = (e) => {
+  if (ws) { // drop the old socket without letting its handlers fire
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try { ws.close(); } catch { /* already closed */ }
+  }
+  const sock = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?t=${encodeURIComponent(token)}`);
+  ws = sock;
+  connectTimer = setTimeout(() => { if (sock.readyState !== WebSocket.OPEN) connect(); }, CONNECT_TIMEOUT_MS);
+  sock.onopen = () => {
+    clearTimeout(connectTimer);
+    retries = 0;
+    lastMsg = Date.now();
+    if ($("status").textContent !== "mpv closed.") setStatus("");
+  };
+  sock.onmessage = (e) => {
+    lastMsg = Date.now();
+    if ($("status").textContent !== "") setStatus("");
     const msg = JSON.parse(e.data);
     if (msg.t === "state") {
       Object.assign(state, msg.props);
@@ -343,14 +378,32 @@ function connect() {
       state[msg.name] = msg.data;
       onProps([msg.name]);
     } else if (msg.t === "gone") {
-      $("status").textContent = "mpv closed.";
+      setStatus("mpv closed.");
     }
   };
-  ws.onclose = () => {
-    if ($("status").textContent !== "mpv closed.") $("status").textContent = "Reconnecting…";
-    setTimeout(connect, 1500);
+  sock.onclose = () => {
+    if ($("status").textContent !== "mpv closed.") setStatus("Reconnecting…");
+    scheduleReconnect();
   };
 }
+
+// Waking the phone: reconnect right now instead of waiting for the browser to notice the dead socket.
+function wake() {
+  if (document.visibilityState !== "visible" || !token) return;
+  const healthy = ws && ws.readyState === WebSocket.OPEN && Date.now() - lastMsg < 1000;
+  if (!healthy) connect();
+}
+document.addEventListener("visibilitychange", wake);
+window.addEventListener("pageshow", wake);
+window.addEventListener("online", wake);
+window.addEventListener("focus", wake);
+
+setInterval(() => {
+  if (document.visibilityState !== "visible" || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const idle = Date.now() - lastMsg;
+  if (idle > DEAD_AFTER_MS) connect();
+  else if (idle > PING_EVERY_MS) ws.send(JSON.stringify({ ping: 1 }));
+}, 2000);
 
 /* ---------- wiring ---------- */
 

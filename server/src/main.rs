@@ -181,6 +181,10 @@ async fn client(socket: WebSocket, app: Arc<App>) {
                 Err(_) => break,
             },
             msg = rx.next() => match msg {
+                // Keepalive from the phone: lets it tell an idle connection from a silently dead one.
+                Some(Ok(Message::Text(text))) if text.as_str() == r#"{"ping":1}"# => {
+                    if tx.send(Message::Text(r#"{"t":"pong"}"#.into())).await.is_err() { break; }
+                }
                 Some(Ok(Message::Text(text))) => handle_client_message(&app, &text),
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                 _ => {}
