@@ -189,3 +189,7 @@ git tag v0.1.0 && git push origin v0.1.0
 
 The workflow builds `mpv-remote-{windows,linux,macos}-{x86_64,aarch64}.zip` (Windows: x86\_64 only),
 plus `SHA256SUMS`, and publishes them as a GitHub release. The installers download from there.
+
+### AI Use Disclosure
+
+This entire project was generated using LLMs.
