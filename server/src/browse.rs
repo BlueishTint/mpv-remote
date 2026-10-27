@@ -65,7 +65,7 @@ impl Roots {
                 if name.starts_with('.') {
                     return None;
                 }
-                let meta = e.metadata().ok()?;
+                let meta = fs::metadata(e.path()).ok()?; // follows symlinks, unlike e.metadata()
                 let is_dir = meta.is_dir();
                 let is_media = Path::new(&name)
                     .extension()
@@ -84,8 +84,34 @@ impl Roots {
     }
 }
 
-/// Canonical Windows paths carry a `\\?\` prefix that mpv and phones shouldn't see.
+/// Canonical Windows paths carry a `\\?\` (or `\\?\UNC\` for network shares) prefix that mpv and phones shouldn't see.
 pub fn display(p: &Path) -> String {
     let s = p.to_string_lossy();
+    if let Some(share) = s.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{share}");
+    }
     s.strip_prefix(r"\\?\").unwrap_or(&s).to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_strips_verbatim_prefixes() {
+        assert_eq!(display(Path::new(r"\\?\C:\Videos")), r"C:\Videos");
+        assert_eq!(display(Path::new(r"\\?\UNC\nas\media\a.mkv")), r"\\nas\media\a.mkv");
+        assert_eq!(display(Path::new("/home/me")), "/home/me");
+    }
+
+    #[test]
+    fn allows_only_inside_roots() {
+        let root = std::env::temp_dir().join("mpv-remote-test-root");
+        fs::create_dir_all(root.join("sub")).unwrap();
+        let roots = Roots::new(&root.to_string_lossy());
+        assert!(roots.allows(&root.join("sub"), None).is_some());
+        assert!(roots.allows(&root.join("sub").join("..").join(".."), None).is_none());
+        assert!(roots.allows(&std::env::temp_dir(), None).is_none());
+        assert!(roots.allows(&std::env::temp_dir(), Some(&std::env::temp_dir())).is_some());
+    }
 }

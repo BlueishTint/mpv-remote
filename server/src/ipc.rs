@@ -32,9 +32,6 @@ const OBSERVED: &[&str] = &[
     "playlist",
     "playlist-pos",
     "sub-delay",
-    "audio-delay",
-    "loop-file",
-    "loop-playlist",
     // Maintained by main.lua; the phone's marks list.
     "user-data/mpv-remote/marks",
 ];

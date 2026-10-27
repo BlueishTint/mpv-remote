@@ -65,7 +65,9 @@ local function save_token(token)
         content = f:read("*a")
         f:close()
     end
-    local replaced, n = content:gsub("([\r\n]?)token=[^\r\n]*", "%1token=" .. token, 1)
+    -- Only replace a token= line at the start of a line (not "#token=").
+    local replaced, n = ("\n" .. content):gsub("\ntoken=[^\r\n]*", "\ntoken=" .. token, 1)
+    replaced = replaced:sub(2)
     if n == 0 then
         replaced = content .. ((content == "" or content:sub(-1) == "\n") and "" or "\n") .. "token=" .. token .. "\n"
     end
@@ -127,6 +129,10 @@ local function start_server()
         "--bind", opts.bind,
     }
     if opts.browse_roots ~= "" then
+        for root in opts.browse_roots:gmatch("[^|]+") do
+            local info = utils.file_info(root)
+            if not (info and info.is_dir) then msg.warn("browse_roots: not a folder: " .. root) end
+        end
         args[#args + 1] = "--roots"
         args[#args + 1] = opts.browse_roots
     end

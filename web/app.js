@@ -239,7 +239,7 @@ async function browse(path) {
   try {
     const q = new URLSearchParams({ t: token, path: path || "" });
     const res = await fetch(`/api/browse?${q}`);
-    if (!res.ok) throw new Error(res.status === 403 ? "That folder isn't allowed (see browse_roots)." : `Error ${res.status}`);
+    if (!res.ok) throw new Error(res.status === 403 ? "Can't open that folder (outside browse_roots, or unreadable)." : `Error ${res.status}`);
     const data = await res.json();
     files = { loaded: true, path: data.path, parent: data.parent };
     $("files-path").textContent = data.path;
@@ -381,7 +381,12 @@ function connect() {
       setStatus("mpv closed.");
     }
   };
-  sock.onclose = () => {
+  sock.onclose = (e) => {
+    if (e.code === 4001) { // the token was reset in mpv; stop retrying until the phone pairs again
+      token = null;
+      setStatus("Not paired. Scan the QR code shown in mpv (Ctrl+r).");
+      return;
+    }
     if ($("status").textContent !== "mpv closed.") setStatus("Reconnecting…");
     scheduleReconnect();
   };

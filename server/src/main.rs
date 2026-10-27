@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
@@ -131,12 +131,17 @@ async fn main() {
     // The server's lifetime follows mpv's: when the IPC connection ends, tell clients and exit.
     let hub_app = app.clone();
     tokio::spawn(async move {
-        if let Err(e) = ipc::run(&args.pipe, hub_app.hub.clone(), cmd_rx).await {
-            eprintln!("mpv ipc: {e}");
-        }
+        // A non-zero exit makes main.lua show the error in the mpv console.
+        let code = match ipc::run(&args.pipe, hub_app.hub.clone(), cmd_rx).await {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("mpv ipc ({}): {e}", args.pipe);
+                1
+            }
+        };
         hub_app.hub.announce_gone();
         tokio::time::sleep(Duration::from_millis(500)).await;
-        std::process::exit(0);
+        std::process::exit(code);
     });
 
     if let Err(e) = axum::serve(listener, router).await {
@@ -154,7 +159,11 @@ async fn ws_handler(
     State(app): State<Arc<App>>,
 ) -> Response {
     if !authorized(&app, &q) {
-        return StatusCode::UNAUTHORIZED.into_response();
+        // Browsers hide an HTTP 401 from the page, so accept and close with a code it can see.
+        return ws.on_upgrade(|mut socket| async move {
+            let frame = CloseFrame { code: 4001, reason: "bad token".into() };
+            let _ = socket.send(Message::Close(Some(frame))).await;
+        });
     }
     ws.on_upgrade(move |socket| client(socket, app))
 }

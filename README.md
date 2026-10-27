@@ -1,15 +1,18 @@
 # mpv-remote
 
-Control [mpv](https://mpv.io) from your phone over your home Wi-Fi. It's an mpv script plus a tiny
-helper server (about 1 MB, written in Rust); the phone side is a web page, so there's no app to install.
+Control [mpv](https://mpv.io) from your phone. Press **Ctrl+r** in mpv, scan the QR code, and your phone
+becomes a remote. There's no app to install: it's a web page served by a small helper that starts and
+stops with mpv.
 
-- Play/pause, seek, volume, previous/next, fullscreen, skip-OP (+85 s)
-- Audio / subtitle / secondary-subtitle tracks, subtitle delay, playback speed, chapters
-- Queue: jump, reorder, remove
-- File browser: open or queue files on the PC from your phone
-- **Marks:** one tap saves the current timestamp, with an optional note. They're stored per file and can be copied as text
-- Lock-screen / notification-shade media controls (best effort, see below)
-- Pair by scanning a QR code shown in mpv. The helper starts and stops with mpv.
+What you can do from the phone:
+
+- Play/pause, seek, volume, previous/next, fullscreen, and skip 85 s (for openings)
+- Pick audio and subtitle tracks (including secondary subtitles), adjust subtitle delay and speed, jump to chapters
+- Reorder and remove items in the queue, or open files from your PC with the file browser
+- Save **marks**: one tap saves the current time, with an optional note, and you can copy them all as text
+- Use your phone's lock-screen media controls (optional)
+
+Needs mpv 0.36 or newer, and your phone on the same network as the PC (or [Tailscale](#tailscale)).
 
 ## Install
 
@@ -25,171 +28,119 @@ irm https://raw.githubusercontent.com/BlueishTint/mpv-remote/main/install.ps1 | 
 curl -fsSL https://raw.githubusercontent.com/BlueishTint/mpv-remote/main/install.sh | sh
 ```
 
-The installer finds your mpv config folder (scoop, portable\_config, `%APPDATA%\mpv`, `~/.config/mpv`,
-Flatpak, Snap), downloads the matching release, verifies its checksum, and installs into
-`scripts/mpv-remote/`. Re-running it upgrades; your settings and marks are never touched. Options:
+The installer finds your mpv config folder and puts the plugin in `scripts/mpv-remote/`. Run it again to
+update. Your settings and marks are kept.
+
+If it picks the wrong folder, or you want something else:
 
 | | Windows | Linux / macOS |
 |---|---|---|
-| Choose the config folder | `-ConfigDir PATH` | `--config-dir PATH` |
-| Pin a version | `-Version v0.1.0` | `--version v0.1.0` |
-| Remove | `-Uninstall` | `--uninstall` |
-| Add a firewall rule (admin) | `-OpenFirewall` | – |
-| Same, also admitting [Tailscale](#tailscale) | `-AllowTailscale` | – |
+| Use a specific mpv config folder | `-ConfigDir PATH` | `--config-dir PATH` |
+| Install a specific version | `-Version v0.3.0` | `--version v0.3.0` |
+| Uninstall | `-Uninstall` | `--uninstall` |
+| Add the Windows firewall rule (run as admin) | `-OpenFirewall` | |
 
-To pass options to the Windows one-liner:
-`& ([scriptblock]::Create((irm <url>/install.ps1))) -OpenFirewall`.
-
-Manual install: download the zip for your platform from the Releases page and unpack it into
-`<mpv config>/scripts/mpv-remote/`, so `main.lua` and `mpv-remote-server` sit side by side.
-
-## Pairing
-
-1. Start mpv and play something, then press **Ctrl+r**. A QR code appears; it closes by itself as soon as
-   a phone connects (or after 60 s, or when you press Ctrl+r again).
-2. Scan it with your phone's camera. Your phone must be on the same network as the PC.
-3. Use *Add to Home Screen* in your phone browser for an app-like icon. The phone remembers the token,
-   so you only pair once.
-
-### Windows firewall
-
-Windows blocks incoming connections on networks marked **Public**. Either mark your Wi-Fi as Private, or
-run this once in an admin PowerShell. It only admits devices on your own subnet:
+On Windows, options go after the script like this:
 
 ```powershell
-New-NetFirewallRule -DisplayName mpv-remote -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8765 -RemoteAddress LocalSubnet -Profile Any
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BlueishTint/mpv-remote/main/install.ps1))) -OpenFirewall
 ```
+
+To install by hand, download the zip for your system from the Releases page and unpack it into
+`<mpv config>/scripts/mpv-remote/`.
+
+## Pairing your phone
+
+1. Play something in mpv and press **Ctrl+r**. A QR code appears.
+2. Scan it with your phone's camera. The QR code goes away once the phone connects.
+3. Optional: add the page to your home screen so it opens like an app.
+
+You only need to do this once per phone.
+
+**Windows firewall.** If the page never loads, Windows is probably blocking it. Either set your Wi-Fi network
+to *Private* in Windows settings, or run the installer with `-OpenFirewall`.
 
 ## Settings
 
-`script-opts/mpv-remote.conf` in your mpv config folder:
+Settings live in `script-opts/mpv-remote.conf` in your mpv config folder. You usually don't need to change any.
 
-| Option | Default | |
+| Setting | Default | What it does |
 |---|---|---|
-| `token` | generated | Pairing secret. Delete the line to invalidate all paired phones. |
-| `port` | `8765` | |
-| `tailscale_host` | none | Address to put in the QR code *instead of* `host` while [Tailscale](#tailscale) is connected on the PC: a Tailscale Serve URL, a MagicDNS name or an IP. Ignored while Tailscale is off. |
-| `bind` | `0.0.0.0` | Interface to listen on. `127.0.0.1` disables phone access. |
-| `host` | auto | Address in the QR code. Empty = auto-detected LAN IP. `tailscale` = this PC's [Tailscale](#tailscale) address while Tailscale is connected, otherwise the LAN IP. Or an IP/name, or a full URL such as `https://pc.example.ts.net`. |
-| `browse_roots` | your home folder | Folders the phone may browse and open files from, separated by `\|`. |
-| `autostart` | `yes` | Start the helper when mpv starts. |
+| `browse_roots` | your home folder | Folders the file browser can show. Separate several with `\|`, like `D:\Videos\|E:\Anime`. |
+| `port` | `8765` | Port the phone connects to. |
+| `host` | detected | The address in the QR code. Set it if the QR code shows the wrong IP. |
+| `tailscale_host` | | Address to use while Tailscale is on. See [Tailscale](#tailscale). |
+| `autostart` | `yes` | Start the helper with mpv. With `no`, it starts the first time you press Ctrl+r. |
 | `pair_seconds` | `60` | How long the QR code stays up. |
-| `server_path` | next to `main.lua` | Override the helper location (development). |
+| `token` | generated | The pairing code. Delete this line to unpair every phone. |
 
-Key bindings: **Ctrl+r** shows the pairing QR. To bind a key for marking from the keyboard, add to
-`input.conf`: `m script-binding mpv_remote/mark`.
+To mark from the keyboard too, add a key to `input.conf`, for example: `m script-binding mpv_remote/mark`.
 
-Marks are saved as JSON in `<mpv config>/mpv-remote/marks/<file name>.json`.
+Marks are saved in `<mpv config>/mpv-remote/marks/`, one file per video, named after the video's file name.
 
 ## Tailscale
 
-[Tailscale](https://tailscale.com) is a free VPN that gives your devices private addresses that work from
-anywhere. Use it to control mpv when your phone and PC can't see each other on the same network, or to get a
-trusted HTTPS address.
+[Tailscale](https://tailscale.com) lets your phone reach your PC when they aren't on the same network.
 
-1. Install Tailscale on the PC and on the phone, and sign in to the same account on both.
-2. In `mpv-remote.conf` set `host=tailscale`. While Tailscale is connected on the PC, the QR code carries its
-   Tailscale address; when it isn't, the QR code falls back to the normal LAN address. So the setting can stay
-   on permanently, and you only switch Tailscale on (on both devices) when you need it.
-3. Let Tailscale traffic through the Windows firewall. The default rule only admits your local subnet, so run
-   the installer with `-AllowTailscale`, or in an admin PowerShell:
+1. Install Tailscale on the PC and the phone, signed in to the same account.
+2. Add `host=tailscale` to `mpv-remote.conf`. While Tailscale is on, the QR code uses the Tailscale address.
+   While it's off, the QR code uses your normal home network address, so you can leave this setting in place.
+3. On Windows, run the installer with `-AllowTailscale` (as admin) so the firewall lets Tailscale through.
 
-   ```powershell
-   New-NetFirewallRule -DisplayName mpv-remote -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8765 -RemoteAddress LocalSubnet,'100.64.0.0/10' -Profile Any
-   ```
-
-4. Press Ctrl+r and scan the QR code with the phone as usual.
-
-**HTTPS and a full app install.** Tailscale can also publish the helper under a real certificate, which lets the
-page install as an app without the Chrome flag. This needs MagicDNS and HTTPS Certificates enabled once on the
-DNS page of the Tailscale admin console. Then, on the PC run:
+**Optional: HTTPS.** Tailscale can give the remote a proper `https://` address, which also lets your phone
+install it as a full app. Turn on *MagicDNS* and *HTTPS Certificates* in the DNS page of the Tailscale admin
+console, then run this on the PC:
 
 ```sh
 tailscale serve --bg 8765
 ```
 
-It prints an address like `https://pc.your-tailnet.ts.net`. Put that in the config as
-`tailscale_host=https://pc.your-tailnet.ts.net` and pair again. That address only works through the tailnet, so
-the QR code uses it only while Tailscale is connected on the PC and falls back to the normal LAN address
-otherwise (don't put it in `host=`, which would show it all the time). This route is reached through Tailscale
-itself, so the firewall rule above isn't needed for it, and traffic is encrypted.
+It prints an address like `https://pc.your-tailnet.ts.net`. Put it in the config as `tailscale_host=` (not
+`host=`), and pair again.
 
-Tailscale's addresses are in `100.64.0.0/10`. The QR code's automatic detection ignores virtual adapters on
-purpose, which is why `host=tailscale` has to be set explicitly.
+## Installing as an app
 
-**Using it alongside other VPNs and filters.** Only the PC's side is automatic. If Tailscale is connected on
-the PC but not on the phone, the phone can't reach the Tailscale address, so switch it off on the PC when you
-don't need it. On Android, apps that filter traffic through the VPN slot (many DNS filters do) can't run at the
-same time as Tailscale. On the PC, other tunnel clients may also claim addresses in `100.64.0.0/10`, so
-check their split-tunnel settings if the two don't work together.
+Phones only offer a full app install for `https://` pages. Over plain home Wi-Fi you can still add a home
+screen shortcut. Two ways to get the full install:
 
-## Security
-
-Anyone on your network who has the token can control mpv, so treat it like a password and don't pair
-on networks you don't trust. The connection is plain HTTP, which is visible to other devices on the same network.
-
-- Every request needs the token; the phone UI itself is the only thing served without it.
-- The phone can only send a fixed list of commands (playback, tracks, playlist, marks). It can't run
-  programs, load scripts or change arbitrary mpv settings.
-- File browsing and `loadfile` are limited to `browse_roots`, plus the folder of the playing file.
-
-## Limitations
-
-- **Full app install needs HTTPS.** Browsers only offer it from a secure origin, and a LAN address over
-  HTTP doesn't qualify. *Add to Home Screen* still gives you a shortcut. The page ships a web app manifest,
-  icons and a service worker, so it becomes installable wherever the browser trusts the origin: for example
-  behind [Tailscale Serve](https://tailscale.com/kb/1242/tailscale-serve) (real HTTPS certificate), or, as a
-  on Android Chrome, by adding the exact address (`http://192.168.x.x:8765`, with scheme and port) under
-  `chrome://flags` → "Insecure origins treated as secure" and relaunching. This has been confirmed to give
-  a full install. Reserve a fixed IP for the PC on your router, because the flag only matches that address.
-- **Lock-screen controls** work by playing a silent clip in the page, which phones need before they show
-  media controls. Android Chrome and iOS Safari behave differently, and a paused page may lose the controls
-  after a few minutes. Turn the toggle on under the Player tab.
-- One mpv window at a time: a second mpv finds the port in use and its helper exits.
-- VPNs such as Cloudflare WARP can interfere. The QR code ignores virtual adapters, but if your phone
-  can't connect, try turning the VPN off while using the remote.
+- Use Tailscale HTTPS (above).
+- On Android Chrome, open `chrome://flags`, find *Insecure origins treated as secure*, add your PC's exact
+  address (such as `http://192.168.1.20:8765`), and relaunch Chrome. Give your PC a fixed IP in your router
+  settings, or this breaks when the IP changes.
 
 ## Troubleshooting
 
-| Symptom | Likely cause |
+| Problem | Try this |
 |---|---|
-| Phone page never loads | Firewall (see above), Wi-Fi "client isolation" / guest network, or phone on mobile data |
-| QR shows the wrong IP | Set `host=` in `mpv-remote.conf` |
-| Ctrl+r does nothing | Open the mpv console (`` ` ``) and look for `mpv-remote` messages; check `mpv-remote-server` sits next to `main.lua` |
-| "Not paired" on the phone | Scan the QR again (the token may have been reset) |
-| Marks or browse list empty | Check `browse_roots`; marks are keyed by file name |
+| The page never loads on the phone | Check the [firewall](#pairing-your-phone). Make sure the phone is on the same Wi-Fi, not mobile data or a guest network. Turn off VPNs like Cloudflare WARP. |
+| The QR code shows the wrong address | Set `host=` to your PC's IP in `mpv-remote.conf`. |
+| Ctrl+r does nothing | Open the mpv console with `` ` `` and look for `mpv-remote` messages. |
+| The phone says "Not paired" | Press Ctrl+r and scan again. |
+| The file browser can't open a folder | Add it to `browse_roots`. |
+| Lock-screen controls disappear | Phones may drop them after a few minutes of pause. Turn the toggle off and on again in the Player tab. |
+
+Only one mpv window can use the remote at a time.
+
+## Good to know about security
+
+- Anyone who has your pairing code and can reach your PC can control mpv. If you think it leaked, delete the
+  `token` line to unpair everything.
+- The connection is plain HTTP, so other devices on the same network could see the code. Use it on networks
+  you trust, or use Tailscale.
+- The phone can only control playback and open media files inside `browse_roots`. It can't run programs or
+  change other mpv settings.
 
 ## Building from source
-
-Needs a recent stable Rust toolchain.
 
 ```sh
 cargo build --release --manifest-path server/Cargo.toml
 ```
 
-Copy `main.lua` and `server/target/release/mpv-remote-server[.exe]` into
-`<mpv config>/scripts/mpv-remote/`. The web UI in `web/` is embedded into the binary at build time
-(debug builds read it from disk, so UI edits show up on refresh).
+Copy `main.lua` and `server/target/release/mpv-remote-server[.exe]` into `<mpv config>/scripts/mpv-remote/`.
+The phone page in `web/` is built into the helper.
 
-### Layout
+To publish a release, push a tag such as `v0.4.0`. GitHub Actions builds every platform and creates the release.
 
-| | |
-|---|---|
-| `main.lua` | mpv side: starts/stops the helper, token, pairing QR, marks storage |
-| `server/` | Rust helper: mpv JSON-IPC client, WebSocket state sync, file browsing, command allowlist |
-| `web/` | Phone UI (plain HTML/CSS/JS, no build step) |
-| `install.ps1`, `install.sh` | Installers |
-| `.github/workflows/release.yml` | Builds Windows/Linux/macOS binaries on a `v*` tag |
-
-### Releasing
-
-```sh
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-The workflow builds `mpv-remote-{windows,linux,macos}-{x86_64,aarch64}.zip` (Windows: x86\_64 only),
-plus `SHA256SUMS`, and publishes them as a GitHub release. The installers download from there.
-
-### AI Use Disclosure
+## AI use disclosure
 
 This entire project was generated using LLMs.
