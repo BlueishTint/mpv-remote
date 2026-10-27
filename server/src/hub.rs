@@ -63,7 +63,7 @@ fn is_allowed(cmd: &[Value]) -> bool {
     let Some(name) = cmd.first().and_then(Value::as_str) else { return false };
     let prop_ok = || cmd.get(1).and_then(Value::as_str).is_some_and(|p| SETTABLE.contains(&p));
     match name {
-        "set_property" | "cycle" => prop_ok(),
+        "set_property" | "add" | "cycle" => prop_ok(),
         "seek" | "playlist-next" | "playlist-prev" | "playlist-play-index" | "playlist-move"
         | "playlist-remove" => true,
         // Only our own plugin's messages (marks etc.).
@@ -87,6 +87,7 @@ mod tests {
     fn allowlist() {
         assert!(ok(json!(["cycle", "pause"])));
         assert!(ok(json!(["set_property", "volume", 50])));
+        assert!(ok(json!(["add", "sub-delay", 0.1])));
         assert!(ok(json!(["seek", 10])));
         assert!(ok(json!(["script-message", "mpv-remote-mark-add", ""])));
         assert!(!ok(json!(["set_property", "input-ipc-server", "x"])));

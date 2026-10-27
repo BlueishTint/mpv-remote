@@ -43,6 +43,12 @@ jobs:
           perl -pi -e 's/^version = ".*"/version = "$ENV{V}"/' server/Cargo.toml
           perl -0pi -e 's/(name = "mpv-remote-server"\r?\nversion = )"[^"]*"/$1"$ENV{V}"/' server/Cargo.lock
 
+      # A failing test stops the release (it needs every build job to pass).
+      - name: Test
+        if: matrix.name == 'windows-x86_64' || matrix.name == 'linux-x86_64'
+        working-directory: server
+        run: cargo test --locked
+
       - name: Build
         working-directory: server
         run: cargo build --release --locked --target ${{ matrix.target }}

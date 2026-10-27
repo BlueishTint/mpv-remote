@@ -72,11 +72,12 @@ Settings live in `script-opts/mpv-remote.conf` in your mpv config folder. You us
 | `tailscale_host` | | Address to use while Tailscale is on. See [Tailscale](#tailscale). |
 | `autostart` | `yes` | Start the helper with mpv. With `no`, it starts the first time you press Ctrl+r. |
 | `pair_seconds` | `60` | How long the QR code stays up. |
-| `token` | generated | The pairing code. Delete this line to unpair every phone. |
+| `token` | generated | The pairing code. Delete this line and restart mpv to unpair every phone. |
 
 To mark from the keyboard too, add a key to `input.conf`, for example: `m script-binding mpv_remote/mark`.
 
-Marks are saved in `<mpv config>/mpv-remote/marks/`, one file per video, named after the video's file name.
+Marks are saved in `<mpv config>/mpv-remote/marks/`, in a file named after the video's file name. Two
+videos with the same file name in different folders share their marks.
 
 ## Tailscale
 
@@ -124,11 +125,11 @@ Only one mpv window can use the remote at a time.
 ## Good to know about security
 
 - Anyone who has your pairing code and can reach your PC can control mpv. If you think it leaked, delete the
-  `token` line to unpair everything.
+  `token` line and restart mpv to unpair everything.
 - The connection is plain HTTP, so other devices on the same network could see the code. Use it on networks
   you trust, or use Tailscale.
-- The phone can only control playback and open media files inside `browse_roots`. It can't run programs or
-  change other mpv settings.
+- The phone can only control playback and open files inside `browse_roots` or the playing video's folder
+  (and their subfolders). It can't run programs or change other mpv settings.
 
 ## Building from source
 

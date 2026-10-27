@@ -130,8 +130,9 @@ local function start_server()
     }
     if opts.browse_roots ~= "" then
         for root in opts.browse_roots:gmatch("[^|]+") do
-            local info = utils.file_info(root)
-            if not (info and info.is_dir) then msg.warn("browse_roots: not a folder: " .. root) end
+            root = root:match("^%s*(.-)%s*$")
+            local info = root ~= "" and utils.file_info(root)
+            if not (info and info.is_dir) then msg.warn("browse_roots: not a folder, skipped: " .. root) end
         end
         args[#args + 1] = "--roots"
         args[#args + 1] = opts.browse_roots
@@ -334,7 +335,7 @@ local function show_pairing()
         if not url then url = line else rows[#rows + 1] = line end
     end
     pairing = { url = url, rows = rows }
-    msg.info("pairing URL: " .. url)
+    msg.info("pairing URL: " .. url:gsub("%?t=.*", "?t=…"))
     render_pairing()
     if pair_timer then pair_timer:kill() end
     pair_timer = mp.add_timeout(opts.pair_seconds, hide_pairing)

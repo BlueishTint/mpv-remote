@@ -29,18 +29,14 @@ pub struct Listing {
 pub struct Roots(Vec<PathBuf>);
 
 impl Roots {
-    /// `list` is `|`-separated; empty falls back to the user's home directory.
+    /// `list` is `|`-separated; empty means the user's home directory. Folders that don't exist are
+    /// skipped (main.lua warns about them), without widening access to the home directory.
     pub fn new(list: &str) -> Self {
-        let mut roots: Vec<PathBuf> = list
-            .split('|')
-            .filter(|s| !s.trim().is_empty())
-            .filter_map(|s| fs::canonicalize(s.trim()).ok())
-            .collect();
-        if roots.is_empty() {
+        if list.trim().is_empty() {
             let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
-            roots.extend(home.and_then(|h| fs::canonicalize(h).ok()));
+            return Self(home.and_then(|h| fs::canonicalize(h).ok()).into_iter().collect());
         }
-        Self(roots)
+        Self(list.split('|').filter_map(|s| fs::canonicalize(s.trim()).ok()).collect())
     }
 
     pub fn first(&self) -> Option<&Path> {
@@ -113,5 +109,10 @@ mod tests {
         assert!(roots.allows(&root.join("sub").join("..").join(".."), None).is_none());
         assert!(roots.allows(&std::env::temp_dir(), None).is_none());
         assert!(roots.allows(&std::env::temp_dir(), Some(&std::env::temp_dir())).is_some());
+    }
+
+    #[test]
+    fn missing_roots_do_not_fall_back_to_home() {
+        assert!(Roots::new("Z:/does/not/exist|/nor/this").first().is_none());
     }
 }
